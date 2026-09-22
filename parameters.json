@@ -1,0 +1,18 @@
+{
+  "mesh_file": "two_triangles.msh",
+  "poi_values_file": "two_triangles.msh_poi_values.json",
+  "points_of_interest": [
+    [0, 0],
+    [0.1, 0],
+    [0, -0.4],
+    [-0.8, 0.9],
+    [0.5, -0.7],
+    [0.9, 0],
+    [-0.7, 0],
+    [-0.1, -0.1]
+  ],
+  "true_values": [0, 0.1, -0.4, 0.1, -0.2, 0.9, -0.7, -0.2],
+  "do_mismatch_refresh": true,
+  "alpha": 0.01,
+  "beta": 0.0
+}

@@ -1,0 +1,17 @@
+{
+  "mesh_file": "two_triangles.msh",
+  "values_file": "two_triangles.msh_splain_nodal_values.json",
+  "draw_grad": true,
+  "gouraud_shading": true,
+  "cmap": "rainbow",
+  "grad_alpha": 0.6,
+  "draw_izo": true,
+  "show_izo_values": true,
+  "levels": 5,
+  "izo_color": "black",
+  "izo_width": 0.8,
+  "izo_alpha": 1.0,
+  "draw_cont": true,
+  "cont_color": "black",
+  "cont_alpha": 0.7
+}
