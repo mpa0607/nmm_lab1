@@ -1,6 +1,6 @@
 {
-  "mesh_file": "two_triangles.msh",
-  "values_file": "two_triangles.msh_splain_nodal_values.json",
+  "mesh_file": "mesh0.msh",
+  "values_file": "mesh0.msh_splain_nodal_values.json",
   "draw_grad": true,
   "gouraud_shading": true,
   "cmap": "rainbow",

@@ -11,3 +11,7 @@ build/
 .idea/
 .vscode/
 *.log
+
+# Результаты расчёта: восстанавливаются командой python run_all.py <сетка>
+*_values.json
+*_results.txt

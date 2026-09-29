@@ -1,0 +1,7 @@
+{
+  "mesh_file": "mesh0.msh",
+  "func_num": 4,
+  "start": [-1, 0.13],
+  "stop": [1, 0.13],
+  "n_ints": 10000
+}

@@ -3,6 +3,9 @@ import json
 import copy
 import gmsh
 
+from sparse_matrix import Matrix
+from test_functions import u_func
+
 def lam_func(f, x=0, y=0):
     if f == 0:
         return 1
@@ -11,138 +14,23 @@ def lam_func(f, x=0, y=0):
 
 def gamm_func(f, x=0, y=0):
     if f == 0:
-        return 1
+        return 2
     else:
         return 0
 
 def f_func(f, x=0, y=0):
     if f == 0:
-        return x + y
+        return 2 * (x + y)
     elif f == 1:
-        return 4 + x ** 2 + y ** 2
+        return -4 + 2 * (x ** 2 + y ** 2)
     elif f == 2:
-        return 6 * x + 6 * y + x ** 3 + y ** 3
+        return -6 * x - 6 * y + 2 * (x ** 3 + y ** 3)
     elif f == 3:
-        return 12 * x ** 2 + 12 * y ** 2 + x ** 4 + y ** 4
+        return -12 * x ** 2 - 12 * y ** 2 + 2 * (x ** 4 + y ** 4)
     elif f == 4:
-        return -math.sin(x) - math.sin(y) + math.sin(x) + math.sin(y)
+        return math.sin(x) + math.sin(y) + 2 * (math.sin(x) + math.sin(y))
     else:
         return 0
-
-def u_func(f, x=0, y=0):
-    if f == 0:
-        return x + y
-    elif f == 1:
-        return x ** 2 + y ** 2
-    elif f == 2:
-        return x ** 3 + y ** 3
-    elif f == 3:
-        return x ** 4 + y ** 4
-    elif f == 4:
-        return math.sin(x) + math.sin(y)
-    else:
-        return 0
-
-class Matrix:
-    def __init__(self, ig, jg, ggl, ggu, di):
-        self.ig = copy.copy(ig)
-        self.jg = copy.copy(jg)
-        self.ggl = copy.copy(ggl)
-        self.ggu = copy.copy(ggu)
-        self.di = copy.copy(di)
-
-    def get_elem(self, i, j):
-        if i == j:
-            return self.di[i]
-        elif i > j:
-            start = self.ig[i]
-            end = self.ig[i + 1]
-            for e in range(start, end):
-                if self.jg[e] == j:
-                    return self.ggl[e]
-        else:
-            start = self.ig[j]
-            end = self.ig[j + 1]
-            for e in range(start, end):
-                if self.jg[e] == i:
-                    return self.ggu[e]
-        return 0
-
-    def add_to_elem(self, i, j, n):
-        if n == 0:
-            return 0
-        if i == j:
-            self.di[i] += n
-            return 0
-        elif i > j:
-            start = self.ig[i]
-            end = self.ig[i + 1]
-            for e in range(start, end):
-                if self.jg[e] == j:
-                    self.ggl[e] += n
-                    return 0
-        else:
-            start = self.ig[j]
-            end = self.ig[j + 1]
-            for e in range(start, end):
-                if self.jg[e] == i:
-                    self.ggu[e] += n
-                    return 0
-        return 1
-
-    def matrix_mult_vextor(self, x, y, n):
-        for i in range(n):
-            y[i] = x[i] * self.di[i]
-        for i in range(n):
-            for j in range(self.ig[i + 1] - self.ig[i]):
-                y[i] += self.ggl[self.ig[i] + j] * x[self.jg[self.ig[i] + j]]
-                y[self.jg[self.ig[i] + j]] += self.ggu[self.ig[i] + j] * x[i]
-        return 0
-
-    def scalar_multiply(self, x, y, n):
-        sum = 0
-        for i in range(n):
-            sum += x[i] * y[i]
-        return sum
-
-    def msg(self, pr, x, max_k, mismax, dmsrf):
-        n = len(pr)
-        r = [0 for i in range(n)]
-        z = [0 for i in range(n)]
-        az = [0 for i in range(n)]
-        ar = [0 for i in range(n)]
-        norm_pr = self.scalar_multiply(pr, pr, n)
-        self.matrix_mult_vextor(x, ar, n)
-        for i in range(n):
-            r[i] = pr[i] - ar[i]
-            z[i] = r[i]
-        r_norm = self.scalar_multiply(r, r, n)
-        mism = math.sqrt(r_norm / norm_pr)
-        k1 = 0
-        for k in range(1, max_k + 1):
-            print(f"Начало итерации {k}...")
-            self.matrix_mult_vextor(z, az, n)
-            a = self.scalar_multiply(r, r, n) / self.scalar_multiply(az, z, n)
-            for i in range(n):
-                x[i] += a * z[i]
-                r[i] -= a * az[i]
-            r_norm_new = self.scalar_multiply(r, r, n)
-            b = -(r_norm_new / r_norm)
-            r_norm = r_norm_new
-            for i in range(n):
-                z[i] = r[i] + b * z[i]
-            mism = math.sqrt(r_norm / norm_pr)
-            k1 += 1
-            if k1 % 10 == 0 and dmsrf:
-                vec = [0 for i in range(n)]
-                self.matrix_mult_vextor(x, vec, n)
-                for vc in range(len(vec)):
-                    vec[vc] = pr[vc] - vec[vc]
-                mism = math.sqrt(self.scalar_multiply(vec, vec, n) / norm_pr)
-            print(f"Итерация {k} завершена\nНевязка: {mism}")
-            if mism <= mismax:
-                break
-        print(f"Число итераций: {k1}; Невязка: {mism}")
 
 class Element:
     def __init__(self, nodes, lam, f_fun, gamm, number):
@@ -443,15 +331,16 @@ def solve_system(msh, poi=[], dmsmsrfr=False, trvls=[]):
             cnt += 1
         with open(f"{msh}_results.txt", "w") as res_file:
             res_file.write(result)
-    input("Нажмите любую клавишу для закрытия программы...")
     return q_new, interest_values, interest_derivs_x, interest_derivs_y
 
-with open("parameters.json", "r") as infile:
+
+def main(pause=True):
     try:
-        data = json.load(infile)
+        with open("parameters.json", "r") as infile:
+            data = json.load(infile)
         mesh_name = data["mesh_file"]
         points_of_interest = data["points_of_interest"]
-        true_values=data["true_values"]
+        true_values = data["true_values"]
         do_mismatch_refresh = data["do_mismatch_refresh"]
         q_vec, v_poi, poi_der_x, poi_der_y = solve_system(mesh_name, points_of_interest, do_mismatch_refresh, true_values)
         with open(mesh_name + "_values.json", "w") as q_out:
@@ -461,4 +350,11 @@ with open("parameters.json", "r") as infile:
             json.dump(dt, v_out)
     except Exception as e:
         print(e)
-        input("Press enter to close...")
+        if not pause:
+            raise
+    if pause:
+        input("Нажмите Enter для закрытия программы...")
+
+
+if __name__ == "__main__":
+    main()

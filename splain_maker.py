@@ -19,45 +19,7 @@ from collections import defaultdict
 
 import gmsh
 
-
-# ---------------------------------------------------------------------------
-# Тестовые функции (краевые / эталон), оставлены для совместимости
-# ---------------------------------------------------------------------------
-
-def lam_func(f, x=0, y=0):
-    return 1 if f == 0 else 0
-
-
-def gamm_func(f, x=0, y=0):
-    return 1 if f == 0 else 0
-
-
-def f_func(f, x=0, y=0):
-    if f == 0:
-        return x + y
-    if f == 1:
-        return 4 + x ** 2 + y ** 2
-    if f == 2:
-        return 6 * x + 6 * y + x ** 3 + y ** 3
-    if f == 3:
-        return 12 * x ** 2 + 12 * y ** 2 + x ** 4 + y ** 4
-    if f == 4:
-        return 0.0
-    return 0
-
-
-def u_func(f, x=0, y=0):
-    if f == 0:
-        return x + y
-    if f == 1:
-        return x ** 2 + y ** 2
-    if f == 2:
-        return x ** 3 + y ** 3
-    if f == 3:
-        return x ** 4 + y ** 4
-    if f == 4:
-        return math.sin(x) + math.sin(y)
-    return 0
+from sparse_matrix import Matrix
 
 
 # ---------------------------------------------------------------------------
@@ -224,112 +186,6 @@ def regularization_local_matrices(nodes_coords, L_coeffs, det_abs, alpha, beta):
 
 
 # ---------------------------------------------------------------------------
-# Разреженная матрица + MSG
-# ---------------------------------------------------------------------------
-
-class Matrix:
-    def __init__(self, ig, jg, ggl, ggu, di):
-        self.ig = copy.copy(ig)
-        self.jg = copy.copy(jg)
-        self.ggl = copy.copy(ggl)
-        self.ggu = copy.copy(ggu)
-        self.di = copy.copy(di)
-
-    def get_elem(self, i, j):
-        if i == j:
-            return self.di[i]
-        if i > j:
-            start, end = self.ig[i], self.ig[i + 1]
-            for e in range(start, end):
-                if self.jg[e] == j:
-                    return self.ggl[e]
-        else:
-            start, end = self.ig[j], self.ig[j + 1]
-            for e in range(start, end):
-                if self.jg[e] == i:
-                    return self.ggu[e]
-        return 0.0
-
-    def add_to_elem(self, i, j, n):
-        if n == 0:
-            return 0
-        if i == j:
-            self.di[i] += n
-            return 0
-        if i > j:
-            start, end = self.ig[i], self.ig[i + 1]
-            for e in range(start, end):
-                if self.jg[e] == j:
-                    self.ggl[e] += n
-                    return 0
-        else:
-            start, end = self.ig[j], self.ig[j + 1]
-            for e in range(start, end):
-                if self.jg[e] == i:
-                    self.ggu[e] += n
-                    return 0
-        return 1
-
-    def matrix_mult_vector(self, x, y, n):
-        for i in range(n):
-            y[i] = x[i] * self.di[i]
-        for i in range(n):
-            for j in range(self.ig[i + 1] - self.ig[i]):
-                col = self.jg[self.ig[i] + j]
-                y[i] += self.ggl[self.ig[i] + j] * x[col]
-                y[col] += self.ggu[self.ig[i] + j] * x[i]
-        return 0
-
-    def scalar_multiply(self, x, y, n):
-        return sum(x[i] * y[i] for i in range(n))
-
-    def msg(self, pr, x, max_k, mismax, dmsrf):
-        n = len(pr)
-        r = [0.0] * n
-        z = [0.0] * n
-        az = [0.0] * n
-        ar = [0.0] * n
-        norm_pr = self.scalar_multiply(pr, pr, n)
-        if norm_pr < 1e-30:
-            norm_pr = 1.0
-        self.matrix_mult_vector(x, ar, n)
-        for i in range(n):
-            r[i] = pr[i] - ar[i]
-            z[i] = r[i]
-        r_norm = self.scalar_multiply(r, r, n)
-        mism = math.sqrt(r_norm / norm_pr)
-        k1 = 0
-        for k in range(1, max_k + 1):
-            print(f"Начало итерации {k}...")
-            self.matrix_mult_vector(z, az, n)
-            azz = self.scalar_multiply(az, z, n)
-            if abs(azz) < 1e-30:
-                print("Остановка MSG: (Az,z) ≈ 0")
-                break
-            a = self.scalar_multiply(r, r, n) / azz
-            for i in range(n):
-                x[i] += a * z[i]
-                r[i] -= a * az[i]
-            r_norm_new = self.scalar_multiply(r, r, n)
-            b = 0.0 if abs(r_norm) < 1e-30 else r_norm_new / r_norm
-            r_norm = r_norm_new
-            for i in range(n):
-                z[i] = r[i] + b * z[i]
-            mism = math.sqrt(r_norm / norm_pr)
-            k1 += 1
-            if k1 % 10 == 0 and dmsrf:
-                vec = [0.0] * n
-                self.matrix_mult_vector(x, vec, n)
-                for vc in range(n):
-                    vec[vc] = pr[vc] - vec[vc]
-                mism = math.sqrt(self.scalar_multiply(vec, vec, n) / norm_pr)
-            print(f"Итерация {k} завершена\nНевязка: {mism}")
-            if mism <= mismax:
-                break
-        print(f"Число итераций: {k1}; Невязка: {mism}")
-
-
-# ---------------------------------------------------------------------------
 # Конечноэлементный треугольник с базисом Эрмита
 # ---------------------------------------------------------------------------
 
@@ -366,7 +222,10 @@ class Element:
             - (nodes[1][1] - nodes[0][1]) * (nodes[2][0] - nodes[0][0])
         )
         self.det_d = abs(self.det_signed)
-        return 1 if self.det_d < 1e-15 else 0
+        if self.det_d < 1e-15:
+            return 1
+        self._build_L_coeffs()
+        return 0
 
     def _build_L_coeffs(self):
         nodes = self.nodes_coords
@@ -455,8 +314,6 @@ class Element:
 
     def ret_ermit_derivative(self, index, l_values, which):
         """which: 'x' | 'y' | 'xx' | 'yy'."""
-        if self._psi_cache is None:
-            self._build_L_coeffs()
         psi = self._psi_cache[index]
         if which == "x":
             return self._eval_poly_at_L(psi.diff(self._dLx), l_values)
@@ -476,9 +333,8 @@ class Element:
                 weiuse[pt] = True
                 loc_pois.append(pois["poi"][pt])
                 inds.append(pt)
+        print(f"Элемент {self.number}, Попаданий {len(loc_pois)}")
         self.loc_pois = inds
-
-        self._build_L_coeffs()
 
         l_func_values = [self.l_values_at(p) for p in loc_pois]
         self.loc_l_vals = l_func_values
@@ -764,6 +620,7 @@ def solve_system(
                 interest_derivs_x.append(None)
                 interest_derivs_y.append(None)
                 print(f"Не удалось определить значение в точке {p}")
+
         with open(f"{msh}_splain_results.txt", "w", encoding="utf-8") as res_file:
             res_file.write(result)
 
@@ -775,53 +632,55 @@ def nodal_values_from_q(q_vec, n_nodes):
     return [q_vec[i * 3] for i in range(n_nodes)]
 
 
-if __name__ == "__main__":
-    with open("parameters.json", "r", encoding="utf-8") as infile:
-        try:
+def main(pause=True):
+    try:
+        with open("parameters.json", "r", encoding="utf-8") as infile:
             data = json.load(infile)
-            mesh_name = data["mesh_file"]
-            points_of_interest = data["points_of_interest"]
-            true_values = data.get("true_values", [])
-            do_mismatch_refresh = data.get("do_mismatch_refresh", True)
-            alpha = float(data.get("alpha", 1.0))
-            beta = float(data.get("beta", 0.0))
-            poi_file = data.get("poi_values_file", mesh_name + "_poi_values.json")
+        mesh_name = data["mesh_file"]
+        points_of_interest = data["points_of_interest"]
+        alpha = float(data.get("alpha", 1.0))
+        beta = float(data.get("beta", 0.0))
 
-            q_vec, v_poi, poi_der_x, poi_der_y, nodes = solve_system(
-                mesh_name,
-                points_of_interest,
-                do_mismatch_refresh,
-                true_values,
-                alpha=alpha,
-                beta=beta,
-                poi_values_file=poi_file,
-            )
+        q_vec, v_poi, poi_der_x, poi_der_y, nodes = solve_system(
+            mesh_name,
+            points_of_interest,
+            data.get("do_mismatch_refresh", True),
+            data.get("true_values", []),
+            alpha=alpha,
+            beta=beta,
+            poi_values_file=data.get("poi_values_file", mesh_name + "_poi_values.json"),
+        )
 
-            if q_vec is not None:
-                with open(mesh_name + "_splain_values.json", "w", encoding="utf-8") as q_out:
-                    json.dump(q_vec, q_out)
-                with open(mesh_name + "_splain_poi_values.json", "w", encoding="utf-8") as v_out:
-                    json.dump(
-                        {
-                            "poi": points_of_interest,
-                            "vals": v_poi,
-                            "ders_x": poi_der_x,
-                            "ders_y": poi_der_y,
-                            "alpha": alpha,
-                            "beta": beta,
-                        },
-                        v_out,
-                    )
-                nodal = nodal_values_from_q(q_vec, len(nodes))
-                with open(mesh_name + "_splain_nodal_values.json", "w", encoding="utf-8") as n_out:
-                    json.dump(nodal, n_out)
-                print(
-                    f"Готово. alpha={alpha}, beta={beta}.\n"
-                    f"Полный q → {mesh_name}_splain_values.json\n"
-                    f"Узловые значения → {mesh_name}_splain_nodal_values.json\n"
-                    f"Контрольные точки → {mesh_name}_splain_poi_values.json"
+        if q_vec is not None:
+            with open(mesh_name + "_splain_values.json", "w", encoding="utf-8") as q_out:
+                json.dump(q_vec, q_out)
+            with open(mesh_name + "_splain_poi_values.json", "w", encoding="utf-8") as v_out:
+                json.dump(
+                    {
+                        "poi": points_of_interest,
+                        "vals": v_poi,
+                        "ders_x": poi_der_x,
+                        "ders_y": poi_der_y,
+                        "alpha": alpha,
+                        "beta": beta,
+                    },
+                    v_out,
                 )
-            input("Нажмите Enter для закрытия...")
-        except Exception as e:
-            print(e)
-            input("Press enter to close...")
+            with open(mesh_name + "_splain_nodal_values.json", "w", encoding="utf-8") as n_out:
+                json.dump(nodal_values_from_q(q_vec, len(nodes)), n_out)
+            print(
+                f"Готово. alpha={alpha}, beta={beta}.\n"
+                f"Полный q: {mesh_name}_splain_values.json\n"
+                f"Узловые значения: {mesh_name}_splain_nodal_values.json\n"
+                f"Контрольные точки: {mesh_name}_splain_poi_values.json"
+            )
+    except Exception as e:
+        print(e)
+        if not pause:
+            raise
+    if pause:
+        input("Нажмите Enter для закрытия...")
+
+
+if __name__ == "__main__":
+    main()
